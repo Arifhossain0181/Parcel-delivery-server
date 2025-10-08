@@ -35,12 +35,31 @@ async function run() {
     const db = client.db("Parceldb"); // Database name
     const Parcelcollection = db.collection("Parcel");
     const Paymenthistorycollection = db.collection("Payments");
+    const TrackingCollection= db.collection('tracking')
+    const usersCollection= db.collection('users')
+app.post('/users', async (req, res) => {
+  try {
+    const user = req.body;
+    const email = user.email; // ✅ fixed typo
 
-    // Get all parcels
-    app.get("/Parcel", async (req, res) => {
-      const result = await Parcelcollection.find().toArray();
-      res.send(result);
-    });
+    // Check if user already exists
+    const existingUser = await usersCollection.findOne({ email });
+
+    if (existingUser) {
+      return res
+        .status(200)
+        .send({ message: 'User already exists', inserted: false });
+    }
+
+    // If not found, insert new user
+    const result = await usersCollection.insertOne(user);
+    res.send({ message: 'User inserted successfully', inserted: true, result });
+  } catch (error) {
+    console.error('Error inserting user:', error);
+    res.status(500).send({ message: 'Server error', error });
+  }
+});
+
 
     // Post : create a new Parcel
     app.post("/Parcel", async (req, res) => {
@@ -59,6 +78,7 @@ async function run() {
     app.get("/Parcel", async (req, res) => {
       try {
         const useremail = req.query.email;
+        
         const query = useremail ? { createdBy: useremail } : {};
         const options = {
           sort: {
@@ -169,26 +189,53 @@ async function run() {
     });
 
     // Add a new tracking update
+    // Tracking collection
+    
+ // Add a new tracking update
     app.post("/tracking", async (req, res) => {
       try {
-        const { parcelId, trackingId, status, location, notes } = req.body;
+        const { parcelId, trackingId, status, location, notes, lat, lng } = req.body;
 
         const newUpdate = {
           parcelId,
           trackingId,
           status,
-          location: location || "",
-          notes: notes || "",
-          timestamp: new Date(),
+          location,
+          notes,
+          lat,
+          lng,
+          createdAt: new Date(),
         };
 
         const result = await TrackingCollection.insertOne(newUpdate);
         res.send({ success: true, insertedId: result.insertedId });
       } catch (error) {
-        console.error(error);
+        console.error("Tracking insert error:", error);
         res.status(500).send({ success: false, message: error.message });
       }
     });
+
+    // Get tracking updates by trackingId or parcelId
+    app.get("/tracking", async (req, res) => {
+      try {
+        const { trackingId, parcelId } = req.query;
+
+        let query = {};
+        if (trackingId) query.trackingId = trackingId;
+        if (parcelId) query.parcelId = parcelId;
+
+        const updates = await TrackingCollection.find(query)
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        res.send(updates);
+      } catch (error) {
+        console.error("Tracking fetch error:", error);
+        res.status(500).send({ success: false, message: error.message });
+      }
+    });
+
+
 
     //  Confirm MongoDB connection
     await client.db("admin").command({ ping: 1 });
