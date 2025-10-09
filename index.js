@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+var admin = require("firebase-admin");
 const dotenv = require("dotenv");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
@@ -14,6 +15,12 @@ const port = process.env.PORT || 3000;
 // Middleware
 app.use(cors());
 app.use(express.json());
+// firebase
+const serviceAccount = require(process.env.FIREBASE_SERVICE_ACCOUNT);
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
 
 // MongoDB connection
 const uri =
@@ -35,31 +42,67 @@ async function run() {
     const db = client.db("Parceldb"); // Database name
     const Parcelcollection = db.collection("Parcel");
     const Paymenthistorycollection = db.collection("Payments");
-    const TrackingCollection= db.collection('tracking')
-    const usersCollection= db.collection('users')
-app.post('/users', async (req, res) => {
-  try {
-    const user = req.body;
-    const email = user.email; // ✅ fixed typo
+    const TrackingCollection = db.collection("tracking");
+    const usersCollection = db.collection("users");
+    const riderescollection = db.collection('rideres')
 
-    // Check if user already exists
-    const existingUser = await usersCollection.findOne({ email });
+    //custom middel ware in for jwt
 
-    if (existingUser) {
-      return res
-        .status(200)
-        .send({ message: 'User already exists', inserted: false });
-    }
+    const verifytoken = async (req, res, next) => {
+      try {
+        console.log("headers:", req.headers);
 
-    // If not found, insert new user
-    const result = await usersCollection.insertOne(user);
-    res.send({ message: 'User inserted successfully', inserted: true, result });
-  } catch (error) {
-    console.error('Error inserting user:', error);
-    res.status(500).send({ message: 'Server error', error });
-  }
-});
+        const authHeader = req.headers["authorization"]; // lowercase!
+        if (!authHeader) {
+          return res
+            .status(401)
+            .send({ message: "Unauthorized access: no header" });
+        }
 
+        const token = authHeader.split(" ")[1]; // Bearer <token>
+        if (!token) {
+          return res
+            .status(401)
+            .send({ message: "Unauthorized access: no token" });
+        }
+
+        // Verify the token
+        const decoded = await admin.auth().verifyIdToken(token);
+        req.decoded = decoded;
+
+        next();
+      } catch (error) {
+        console.error(error);
+        return res.status(401).send({ message: "Forbidden access" });
+      }
+    };
+
+    app.post("/users", async (req, res) => {
+      try {
+        const user = req.body;
+        const email = user.email; // ✅ fixed typo
+
+        // Check if user already exists
+        const existingUser = await usersCollection.findOne({ email });
+
+        if (existingUser) {
+          return res
+            .status(200)
+            .send({ message: "User already exists", inserted: false });
+        }
+
+        // If not found, insert new user
+        const result = await usersCollection.insertOne(user);
+        res.send({
+          message: "User inserted successfully",
+          inserted: true,
+          result,
+        });
+      } catch (error) {
+        console.error("Error inserting user:", error);
+        res.status(500).send({ message: "Server error", error });
+      }
+    });
 
     // Post : create a new Parcel
     app.post("/Parcel", async (req, res) => {
@@ -78,7 +121,7 @@ app.post('/users', async (req, res) => {
     app.get("/Parcel", async (req, res) => {
       try {
         const useremail = req.query.email;
-        
+
         const query = useremail ? { createdBy: useremail } : {};
         const options = {
           sort: {
@@ -98,6 +141,21 @@ app.post('/users', async (req, res) => {
         const query = { _id: new ObjectId(id) };
         const Parcel = await Parcelcollection.findOne(query);
         res.send(Parcel);
+      } catch (error) {
+        console.log(error);
+      }
+    });
+    // Payment
+    app.get("/Payments", async (res, req) => {
+      try {
+        const useremail = req.body.email;
+        const query = useremail ? { email: useremail } : {};
+        const options = { sort: { paidAt: -1 } };
+        const Payments = await Paymenthistorycollection.find(
+          query,
+          options
+        ).toArray();
+        res.send(Payments);
       } catch (error) {
         console.log(error);
       }
@@ -165,13 +223,19 @@ app.post('/users', async (req, res) => {
     });
 
     //  Get user payment history (latest first)
-    app.get("/payment-history", async (req, res) => {
+    app.get("/payment-history", verifytoken, async (req, res) => {
       try {
         const { email } = req.query;
+
         if (!email) return res.status(400).send({ message: "Email required" });
 
+        // Optional: verify email matches token
+        if (req.decoded.email !== email) {
+          return res.status(403).send({ message: "Forbidden: email mismatch" });
+        }
+
         const history = await Paymenthistorycollection.find({ email })
-          .sort({ createdAt: -1 }) //  descending order
+          .sort({ createdAt: -1 })
           .toArray();
 
         res.send(history);
@@ -190,11 +254,12 @@ app.post('/users', async (req, res) => {
 
     // Add a new tracking update
     // Tracking collection
-    
- // Add a new tracking update
+
+    // Add a new tracking update
     app.post("/tracking", async (req, res) => {
       try {
-        const { parcelId, trackingId, status, location, notes, lat, lng } = req.body;
+        const { parcelId, trackingId, status, location, notes, lat, lng } =
+          req.body;
 
         const newUpdate = {
           parcelId,
@@ -234,6 +299,98 @@ app.post('/users', async (req, res) => {
         res.status(500).send({ success: false, message: error.message });
       }
     });
+
+
+    // rider side 
+    app.post('/rideres' ,async (req ,res ) =>{
+      const rider = req.body;
+        rider.status = "Pending"; // default
+      const result = await riderescollection.insertOne(rider)
+      res.send(result)
+    })
+  
+// Get pending riders
+app.get('/rideres/pending', async (req, res) => {
+  try {
+    const pendingRiders = await riderescollection.find({ status: "Pending" }).toArray();
+    res.send(pendingRiders);
+  } catch (error) {
+    console.error("Error fetching pending riders:", error);
+    res.status(500).send({ message: "Failed to fetch pending riders" });
+  }
+});
+
+
+
+// Approve rider: update status to "Active"
+app.patch("/rideres/approve/:id", async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = await riderescollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { status: "Active" } }
+    );
+     res.send(result)
+  } catch (error) {
+    console.error("Error approving rider:", error);
+    res.status(500).send({ success: false, message: "Failed to approve rider" });
+  }
+});
+
+
+// Reject rider: delete from collection
+app.delete("/rideres/:id", async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = await riderescollection.deleteOne({ _id: new ObjectId(id) });
+
+    if (result.deletedCount > 0) {
+      // Send success response
+      res.send({ success: true, deletedCount: result.deletedCount });
+    } else {
+      // Rider not found
+      res.status(404).send({ success: false, message: "Rider not found" });
+    }
+  } catch (error) {
+    console.error("Error rejecting rider:", error);
+    res.status(500).send({ success: false, message: "Failed to reject rider" });
+  }
+});
+// GET all active riders
+app.get("/rideres/active", async (req, res) => {
+  try {
+    const activeRiders = await riderescollection.find({ status: "Active" }).toArray();
+    res.send(activeRiders);
+  } catch (error) {
+    console.error("Error fetching active riders:", error);
+    res.status(500).send({ success: false, message: "Failed to fetch active riders" });
+  }
+});
+
+// PATCH to deactivate a rider
+app.patch("/rideres/deactivate/:id", async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const result = await riderescollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { status: "Inactive" } }
+    );
+
+    if (result.modifiedCount > 0) {
+      res.send({ success: true, modifiedCount: result.modifiedCount });
+    } else {
+      res.status(404).send({ success: false, message: "Rider not found or already inactive" });
+    }
+  } catch (error) {
+    console.error("Error deactivating rider:", error);
+    res.status(500).send({ success: false, message: "Failed to deactivate rider" });
+  }
+});
+
+
 
 
 
