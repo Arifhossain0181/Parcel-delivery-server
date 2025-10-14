@@ -61,7 +61,7 @@ async function run() {
 
         const token = authHeader.split(" ")[1]; // Bearer <token>
         if (!token) {
-          return res
+          return res 
             .status(401)
             .send({ message: "Unauthorized access: no token" });
         }
@@ -76,6 +76,17 @@ async function run() {
         return res.status(401).send({ message: "Forbidden access" });
       }
     };
+
+    // jwt end 
+    const verifyAdmin = async (req, res, next) => {
+       const email = req.decoded.email;
+       const query = { email: email };
+       const user = await usersCollection.findOne(query);
+       if(!user || user.role !== 'admin'){
+        return res.status(403).send({message: 'forbidden access'})
+       }
+        next();
+    }
 
     app.post("/users", async (req, res) => {
       try {
@@ -103,6 +114,10 @@ async function run() {
         res.status(500).send({ message: "Server error", error });
       }
     });
+
+    
+
+
     // GET /users/search?email=user@example.com
     app.get("/users/search", async (req, res) => {
       const email = req.query.email;
@@ -157,6 +172,27 @@ app.patch("/users/remove-admin/:id", async (req, res) => {
     res.status(500).send({ success: false, message: "Failed to remove admin" });
   }
 });
+
+app.get("/users/role/:email",verifytoken, async (req, res) => {
+  try {
+    const email = req.params.email;
+
+    //from the  database to find user 
+    const user = await usersCollection.findOne({ email });
+
+    // if user not found
+    if (!user) {
+      return res.status(404).send({ message: "User not found" });
+    }
+
+    // send back the role
+    res.send({ role: user.role });
+  } catch (error) {
+    console.error("Error fetching user role:", error);
+    res.status(500).send({ message: "Server error" });
+  }
+});
+
 
 
     // Post : create a new Parcel
@@ -231,6 +267,30 @@ app.patch("/users/remove-admin/:id", async (req, res) => {
         res.status(402).send(error);
       }
     });
+    //  Mark parcel as collected
+app.patch("/parcel/collected/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const filter = { _id: new ObjectId(id) };
+    const updateDoc = {
+      $set: {
+        deliveryStatus: "Collected",
+        status: "Delivered",
+        collectedAt: new Date(),
+      },
+    };
+    const result = await Parcelcollection.updateOne(filter, updateDoc);
+
+    res.send({
+      message: "Parcel marked as collected",
+      modified: result.modifiedCount > 0,
+    });
+  } catch (error) {
+    console.error("Mark collected error:", error);
+    res.status(500).send({ message: error.message });
+  }
+});
+
 
     //  Mark Parcel as paid & store payment record
     app.post("/payment-success", async (req, res) => {
@@ -243,6 +303,8 @@ app.patch("/users/remove-admin/:id", async (req, res) => {
           $set: {
             paymentStatus: "paid",
             transactionId,
+            status: "Processing",
+             deliveryStatus: "Not Collected", 
             paidAt: new Date(),
           },
         };
@@ -371,7 +433,7 @@ app.patch("/users/remove-admin/:id", async (req, res) => {
     });
 
     // Get pending riders
-    app.get("/rideres/pending", async (req, res) => {
+    app.get("/rideres/pending",verifytoken, verifyAdmin, async (req, res) => {
       try {
         const pendingRiders = await riderescollection
           .find({ status: "Pending" })
@@ -386,7 +448,7 @@ app.patch("/users/remove-admin/:id", async (req, res) => {
     });
 
     // Approve rider → status + role
-    app.patch("/rideres/approve/:id", async (req, res) => {
+    app.patch("/rideres/approve/:id",verifytoken,verifyAdmin, async (req, res) => {
       const { id } = req.params;
       try {
         const rider = await riderescollection.findOne({
@@ -485,7 +547,7 @@ app.patch("/users/remove-admin/:id", async (req, res) => {
     });
 
     // Get all active riders
-    app.get("/rideres/active", async (req, res) => {
+    app.get("/rideres/active",verifytoken,verifyAdmin, async (req, res) => {
       try {
         const activeRiders = await riderescollection
           .find({ status: "Active" })
