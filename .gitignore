@@ -3,3 +3,4 @@ node_modules
 config/serviceAccountKey.json
 
 
+config/config/serviceAccountKey.json
