@@ -350,7 +350,7 @@ app.post("/payment-success", verifytoken, async (req, res) => {
   try {
     const { parcelId, amount, transactionId, email } = req.body;
 
-    // 1️⃣ Insert payment record
+    // 1️Insert payment record
     await Paymenthistorycollection.insertOne({
       parcelId,
       amount,
