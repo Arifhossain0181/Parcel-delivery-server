@@ -61,7 +61,7 @@ async function run() {
 
         const token = authHeader.split(" ")[1]; // Bearer <token>
         if (!token) {
-          return res 
+          return res
             .status(401)
             .send({ message: "Unauthorized access: no token" });
         }
@@ -77,16 +77,16 @@ async function run() {
       }
     };
 
-    // jwt end 
+    // jwt end
     const verifyAdmin = async (req, res, next) => {
-       const email = req.decoded.email;
-       const query = { email: email };
-       const user = await usersCollection.findOne(query);
-       if(!user || user.role !== 'admin'){
-        return res.status(403).send({message: 'forbidden access'})
-       }
-        next();
-    }
+      const email = req.decoded.email;
+      const query = { email: email };
+      const user = await usersCollection.findOne(query);
+      if (!user || user.role !== "admin") {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+      next();
+    };
 
     app.post("/users", async (req, res) => {
       try {
@@ -115,9 +115,6 @@ async function run() {
       }
     });
 
-    
-
-
     // GET /users/search?email=user@example.com
     app.get("/users/search", async (req, res) => {
       const email = req.query.email;
@@ -127,8 +124,11 @@ async function run() {
           .send({ success: false, message: "Email required" });
 
       try {
-        const regex = new RegExp(email ,'i') // artial match
-        const user = await usersCollection.find({ email: {$regex:regex} }).limit(10).toArray()
+        const regex = new RegExp(email, "i"); // artial match
+        const user = await usersCollection
+          .find({ email: { $regex: regex } })
+          .limit(10)
+          .toArray();
         if (!user)
           return res
             .status(404)
@@ -144,56 +144,58 @@ async function run() {
     });
 
     // PATCH /users/admin/:id
-app.patch("/users/admin/:id", async (req, res) => {
-  const { id } = req.params;
-  try {
-    const result = await usersCollection.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: { role: "admin" } }
-    );
-    res.send({ success: true, modifiedCount: result.modifiedCount });
-  } catch (err) {
-    console.error(err);
-    res.status(500).send({ success: false, message: "Failed to make admin" });
-  }
-});
+    app.patch("/users/admin/:id", async (req, res) => {
+      const { id } = req.params;
+      try {
+        const result = await usersCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { role: "admin" } }
+        );
+        res.send({ success: true, modifiedCount: result.modifiedCount });
+      } catch (err) {
+        console.error(err);
+        res
+          .status(500)
+          .send({ success: false, message: "Failed to make admin" });
+      }
+    });
 
-// PATCH /users/remove-admin/:id
-app.patch("/users/remove-admin/:id", async (req, res) => {
-  const { id } = req.params;
-  try {
-    const result = await usersCollection.updateOne(
-      { _id: new ObjectId(id) },
-      { $set: { role: "user" } }
-    );
-    res.send({ success: true, modifiedCount: result.modifiedCount });
-  } catch (err) {
-    console.error(err);
-    res.status(500).send({ success: false, message: "Failed to remove admin" });
-  }
-});
+    // PATCH /users/remove-admin/:id
+    app.patch("/users/remove-admin/:id", async (req, res) => {
+      const { id } = req.params;
+      try {
+        const result = await usersCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { role: "user" } }
+        );
+        res.send({ success: true, modifiedCount: result.modifiedCount });
+      } catch (err) {
+        console.error(err);
+        res
+          .status(500)
+          .send({ success: false, message: "Failed to remove admin" });
+      }
+    });
 
-app.get("/users/role/:email",verifytoken, async (req, res) => {
-  try {
-    const email = req.params.email;
+    app.get("/users/role/:email", verifytoken, async (req, res) => {
+      try {
+        const email = req.params.email;
 
-    //from the  database to find user 
-    const user = await usersCollection.findOne({ email });
+        //from the  database to find user
+        const user = await usersCollection.findOne({ email });
 
-    // if user not found
-    if (!user) {
-      return res.status(404).send({ message: "User not found" });
-    }
+        // if user not found
+        if (!user) {
+          return res.status(404).send({ message: "User not found" });
+        }
 
-    // send back the role
-    res.send({ role: user.role });
-  } catch (error) {
-    console.error("Error fetching user role:", error);
-    res.status(500).send({ message: "Server error" });
-  }
-});
-
-
+        // send back the role
+        res.send({ role: user.role });
+      } catch (error) {
+        console.error("Error fetching user role:", error);
+        res.status(500).send({ message: "Server error" });
+      }
+    });
 
     // Post : create a new Parcel
     app.post("/Parcel", async (req, res) => {
@@ -208,169 +210,214 @@ app.get("/users/role/:email",verifytoken, async (req, res) => {
     });
     // Parcel API
     // get Parcel by user email sorted by latest data
-
+   
+    // ✅ Get parcels for a specific user (by email)
     app.get("/Parcel", async (req, res) => {
       try {
-        const useremail = req.query.email;
+        const { email } = req.query;
+        let query = {};
 
-        const query = useremail ? { createdBy: useremail } : {};
-        const options = {
-          sort: {
-            createdAt: -1,
-          },
-        };
-        const Parcel = await Parcelcollection.find(query, options).toArray();
-        res.send(Parcel);
+        if (email) {
+          // match your Parcel field
+          query.createdBy = email;
+        }
+
+        const parcels = await Parcelcollection
+          .find(query)
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        res.send(parcels);
       } catch (error) {
-        console.log(error, "error showing ");
-      }
-    });
-    /// get sPecific Parcel by id
-    app.get("/Parcel/:id", async (req, res) => {
-      try {
-        const id = req.params.id;
-        const query = { _id: new ObjectId(id) };
-        const Parcel = await Parcelcollection.findOne(query);
-        res.send(Parcel);
-      } catch (error) {
-        console.log(error);
-      }
-    });
-    // Payment
-    app.get("/Payments", async (res, req) => {
-      try {
-        const useremail = req.body.email;
-        const query = useremail ? { email: useremail } : {};
-        const options = { sort: { paidAt: -1 } };
-        const Payments = await Paymenthistorycollection.find(
-          query,
-          options
-        ).toArray();
-        res.send(Payments);
-      } catch (error) {
-        console.log(error);
+        console.error("Error fetching parcels:", error);
+        res.status(500).send({ message: "Failed to fetch parcels" });
       }
     });
 
-    // /create-payment-intent  to save from the frontend
-
-    app.post("/create-payment-intent", async (req, res) => {
+    // ✅ Delete Parcel
+    app.delete("/Parcel/:id", async (req, res) => {
       try {
-        const { amountcents } = req.body; //  extract correctly
-        const paymentIntent = await stripe.paymentIntents.create({
-          amount: parseInt(amountcents), //  must be integer (cents)
-          currency: "usd",
-          payment_method_types: ["card"],
-        });
-        res.send({ clientSecret: paymentIntent.client_secret }); //  correct key spelling
+        const { id } = req.params;
+        const result = await Parcelcollection.deleteOne({ _id: new ObjectId(id) });
+        res.send(result);
       } catch (error) {
-        res.status(402).send(error);
+        console.error(error);
+        res.status(500).send({ message: "Failed to delete parcel" });
       }
     });
-    //  Mark parcel as collected
-app.patch("/parcel/collected/:id", async (req, res) => {
+
+    //  Mark Parcel as collected
+    app.patch("/parcel/collected/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const result = await Parcelcollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { deliveryStatus: "Collected", status: "Delivered", collectedAt: new Date() } }
+        );
+        res.send({ modified: result.modifiedCount > 0 });
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Failed to mark as collected" });
+      }
+    });
+
+    // Update parcel payment status
+    app.patch("/parcel/pay/:id", async (req, res) => {
+      try {
+        const { id } = req.params;
+        const result = await Parcelcollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { paymentStatus: "paid", paidAt: new Date(), deliveryStatus: "Not Collected", status: "Processing" } }
+        );
+        res.send({ modified: result.modifiedCount > 0 });
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Failed to mark as paid" });
+      }
+    });
+   // ✅ GET all payments (optional: admin)
+app.get("/Payments", verifytoken, async (req, res) => {
   try {
-    const id = req.params.id;
-    const filter = { _id: new ObjectId(id) };
-    const updateDoc = {
-      $set: {
-        deliveryStatus: "Collected",
-        status: "Delivered",
-        collectedAt: new Date(),
-      },
-    };
-    const result = await Parcelcollection.updateOne(filter, updateDoc);
+    const useremail = req.query.email; // ✅ GET -> use query
+    const query = useremail ? { email: useremail } : {};
+    const options = { sort: { paidAt: -1 } };
 
-    res.send({
-      message: "Parcel marked as collected",
-      modified: result.modifiedCount > 0,
-    });
+  const payments = await Paymenthistorycollection.find(query, options).toArray();
+    res.send(payments);
   } catch (error) {
-    console.error("Mark collected error:", error);
+    console.error("GET /Payments Error:", error);
     res.status(500).send({ message: error.message });
   }
 });
 
+app.post("/create-payment-intent", async (req, res) => {
+  try {
+    const { amountcents, id } = req.body;
 
-    //  Mark Parcel as paid & store payment record
-    app.post("/payment-success", async (req, res) => {
-      try {
-        const { parcelId, transactionId, amount, email } = req.body;
+    console.log("Incoming payment intent request:", req.body);
 
-        // 1️ Update Parcel status
-        const filter = { _id: new ObjectId(parcelId) };
-        const updateDoc = {
-          $set: {
-            paymentStatus: "paid",
-            transactionId,
-            status: "Processing",
-             deliveryStatus: "Not Collected", 
-            paidAt: new Date(),
-          },
-        };
-        const updateResult = await Parcelcollection.updateOne(
-          filter,
-          updateDoc
-        );
+    // 🔹 Validate amountcents
+    if (!amountcents || isNaN(amountcents) || amountcents <= 0) {
+      console.error("Invalid amountcents:", amountcents);
+      return res.status(400).send({ error: "Invalid amountcents" });
+    }
 
-        // 2️ Create PaymentHistory entry
-        const historyDoc = {
-          parcelId, //  match frontend key
-          transactionId,
-          amount,
-          email,
-          paid_at_string: new Date().toISOString(),
-          status: "succeeded",
-          createdAt: new Date(),
-        };
+    // 🔹 Validate parcel id
+    if (!id) {
+      console.error("Missing parcel id");
+      return res.status(400).send({ error: "Missing parcel id" });
+    }
 
-        const insertResult = await Paymenthistorycollection.insertOne(
-          historyDoc
-        );
+    // 🔹 Create PaymentIntent
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: amountcents,
+      currency: "usd",
+      automatic_payment_methods: { enabled: true },
+    });
 
-        res.send({
-          message: "Payment recorded successfully",
-          parcelUpdated: updateResult.modifiedCount > 0,
-          historySaved: insertResult.insertedId,
-        });
-      } catch (error) {
-        console.error("Payment success API error:", error);
-        res.status(500).send({ message: error.message });
+    console.log("PaymentIntent created:", paymentIntent.id);
+
+    // 🔹 Save to MongoDB
+    if (!Paymenthistorycollection) {
+      console.error("Paymenthistorycollection not defined!");
+      return res.status(500).send({ error: "DB collection not ready" });
+    }
+
+    await Paymenthistorycollection.insertOne({
+      parcelId: id,
+      amount: amountcents / 100,
+      clientSecret: paymentIntent.client_secret,
+      createdAt: new Date(),
+    });
+
+    console.log("Payment history saved for parcel:", id);
+
+    // 🔹 Respond with clientSecret
+    res.send({
+      clientSecret: paymentIntent.client_secret,
+      amount: amountcents,
+    });
+  } catch (error) {
+    console.error("Stripe or DB Error:", error);
+    res.status(500).send({ error: error.message || "Internal Server Error" });
+  }
+});
+
+app.post("/payment-success", verifytoken, async (req, res) => {
+  try {
+    const { parcelId, amount, transactionId, email } = req.body;
+
+    // 1️⃣ Insert payment record
+    await Paymenthistorycollection.insertOne({
+      parcelId,
+      amount,
+      transactionId,
+      email,
+      status: "succeeded",
+      createdAt: new Date(),
+    });
+
+    // 2️⃣ Update Parcel document
+    const updateParcel = await Parcelcollection.updateOne(
+      { _id: new ObjectId(parcelId) },
+      {
+        $set: {
+          paymentStatus: "paid",
+          deliveryStatus: "In-Transit", // set default after payment
+          paymentAt: new Date(),
+        },
       }
-    });
+    );
 
-    //  Get user payment history (latest first)
-    app.get("/payment-history", verifytoken, async (req, res) => {
-      try {
-        const { email } = req.query;
+    if (updateParcel.modifiedCount > 0) {
+      return res.send({ success: true, message: "Payment recorded and parcel updated" });
+    } else {
+      return res.status(404).send({ success: false, message: "Parcel not found" });
+    }
+  } catch (err) {
+    console.error("Payment Success Error:", err);
+    res.status(500).send({ error: err.message });
+  }
+});
 
-        if (!email) return res.status(400).send({ message: "Email required" });
 
-        // Optional: verify email matches token
-        if (req.decoded.email !== email) {
-          return res.status(403).send({ message: "Forbidden: email mismatch" });
-        }
+//  Get user payment history (sorted latest first)
+app.get("/payment-history", verifytoken, async (req, res) => {
+  try {
+    const { email } = req.query;
+    if (!email) return res.status(400).send({ message: "Email required" });
 
-        const history = await Paymenthistorycollection.find({ email })
-          .sort({ createdAt: -1 })
-          .toArray();
+    // Ensure token matches user email
+    if (req.decoded.email !== email) {
+      return res.status(403).send({ message: "Forbidden: email mismatch" });
+    }
 
-        res.send(history);
-      } catch (error) {
-        res.status(500).send({ message: error.message });
-      }
-    });
+    const history = await Paymenthistorycollection.find({ email })
+      .sort({ createdAt: -1 })
+      .toArray();
 
-    //delete Parcel
-    app.delete("/Parcel/:id", async (req, res) => {
-      const id = req.params.id;
-      const query = { _id: new ObjectId(id) };
-      const rsult = await Parcelcollection.deleteOne(query);
-      res.send(rsult);
-    });
+    res.send(history);
+  } catch (error) {
+    console.error("GET /payment-history Error:", error);
+    res.status(500).send({ message: error.message });
+  }
+});
+app.get("/Parcel/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    const query = { _id: new ObjectId(id) };
+  const parcel = await Parcelcollection.findOne(query);
+    if (!parcel) return res.status(404).send({ message: "Parcel not found" });
+    res.send(parcel);
+  } catch (error) {
+    console.error("Error fetching parcel:", error);
+    res.status(500).send({ message: "Server error" });
+  }
+});
 
-    // Add a new tracking update
-    // Tracking collection
+
+
+
 
     // Add a new tracking update
     app.post("/tracking", async (req, res) => {
@@ -433,7 +480,7 @@ app.patch("/parcel/collected/:id", async (req, res) => {
     });
 
     // Get pending riders
-    app.get("/rideres/pending",verifytoken, verifyAdmin, async (req, res) => {
+    app.get("/rideres/pending", verifytoken, verifyAdmin, async (req, res) => {
       try {
         const pendingRiders = await riderescollection
           .find({ status: "Pending" })
@@ -448,41 +495,46 @@ app.patch("/parcel/collected/:id", async (req, res) => {
     });
 
     // Approve rider → status + role
-    app.patch("/rideres/approve/:id",verifytoken,verifyAdmin, async (req, res) => {
-      const { id } = req.params;
-      try {
-        const rider = await riderescollection.findOne({
-          _id: new ObjectId(id),
-        });
-        if (!rider)
-          return res
-            .status(404)
-            .send({ success: false, message: "Rider not found" });
+    app.patch(
+      "/rideres/approve/:id",
+      verifytoken,
+      verifyAdmin,
+      async (req, res) => {
+        const { id } = req.params;
+        try {
+          const rider = await riderescollection.findOne({
+            _id: new ObjectId(id),
+          });
+          if (!rider)
+            return res
+              .status(404)
+              .send({ success: false, message: "Rider not found" });
 
-        const email = rider.email;
+          const email = rider.email;
 
-        const result = await riderescollection.updateOne(
-          { _id: new ObjectId(id) },
-          { $set: { status: "Active" } }
-        );
+          const result = await riderescollection.updateOne(
+            { _id: new ObjectId(id) },
+            { $set: { status: "Active" } }
+          );
 
-        const userResult = await usersCollection.updateOne(
-          { email },
-          { $set: { role: "rider" } }
-        );
+          const userResult = await usersCollection.updateOne(
+            { email },
+            { $set: { role: "rider" } }
+          );
 
-        res.send({
-          success: true,
-          riderUpdated: result.modifiedCount,
-          roleUpdated: userResult.modifiedCount,
-        });
-      } catch (err) {
-        console.error(err);
-        res
-          .status(500)
-          .send({ success: false, message: "Failed to approve rider" });
+          res.send({
+            success: true,
+            riderUpdated: result.modifiedCount,
+            roleUpdated: userResult.modifiedCount,
+          });
+        } catch (err) {
+          console.error(err);
+          res
+            .status(500)
+            .send({ success: false, message: "Failed to approve rider" });
+        }
       }
-    });
+    );
 
     // Reject rider → delete
     app.delete("/rideres/:id", async (req, res) => {
@@ -520,12 +572,10 @@ app.patch("/parcel/collected/:id", async (req, res) => {
         if (result.modifiedCount > 0) {
           res.send({ success: true, modifiedCount: result.modifiedCount });
         } else {
-          res
-            .status(404)
-            .send({
-              success: false,
-              message: "Rider not found or already inactive",
-            });
+          res.status(404).send({
+            success: false,
+            message: "Rider not found or already inactive",
+          });
         }
 
         const userResult = await usersCollection.updateOne(
@@ -547,7 +597,7 @@ app.patch("/parcel/collected/:id", async (req, res) => {
     });
 
     // Get all active riders
-    app.get("/rideres/active",verifytoken,verifyAdmin, async (req, res) => {
+    app.get("/rideres/active", verifytoken, verifyAdmin, async (req, res) => {
       try {
         const activeRiders = await riderescollection
           .find({ status: "Active" })
@@ -560,6 +610,121 @@ app.patch("/parcel/collected/:id", async (req, res) => {
           .send({ success: false, message: "Failed to fetch active riders" });
       }
     });
+
+    //  Modified route: use address instead of district
+    app.get("/rideres/by-district", async (req, res) => {
+      try {
+        const { district } = req.query;
+        const query = district
+          ? { address: district, status: "Active" } //  here changed district → address
+          : { status: "Active" };
+        const riders = await riderescollection.find(query).toArray();
+        res.send(riders);
+      } catch (error) {
+        console.error("Error fetching riders by district:", error);
+        res.status(500).send({ message: "Failed to fetch riders" });
+      }
+    });
+
+    
+
+app.patch("/assign-rider", async (req, res) => {
+  try {
+    const { parcelId, riderId, riderEmail } = req.body;
+
+    if (!parcelId || !riderId || !riderEmail) {
+      return res.status(400).send({ message: "Missing parcelId, riderId or riderEmail" });
+    }
+
+    // Update parcel with assigned rider & status to in_transit
+    const parcelFilter = { _id: new ObjectId(parcelId) };
+    const parcelUpdate = {
+      $set: {
+        assigned_rider_email: riderEmail,
+        assignedRider: new ObjectId(riderId),
+        status: "in_transit", // Automatically set to in_transit
+        assignedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    };
+    const parcelResult = await Parcelcollection.updateOne(parcelFilter, parcelUpdate);
+
+    // Update rider work status
+    const riderFilter = { _id: new ObjectId(riderId) };
+    const riderUpdate = { $set: { workStatus: "In Delivery" } };
+    const riderResult = await riderescollection.updateOne(riderFilter, riderUpdate);
+
+    res.send({
+      message: " Rider assigned successfully and parcel status set to In Transit",
+      parcelUpdated: parcelResult.modifiedCount > 0,
+      riderUpdated: riderResult.modifiedCount > 0,
+    });
+  } catch (error) {
+    console.error("Error assigning rider:", error);
+    res.status(500).send({ message: "Failed to assign rider" });
+  }
+});
+
+
+  // GET PENDING DELIVERIES FOR RIDER
+
+app.get("/parcels/pending-deliveries", async (req, res) => {
+  try {
+    const { rider_email } = req.query;
+    if (!rider_email) {
+      return res.status(400).send({ message: "Rider email is required" });
+    }
+
+    const query = {
+      assigned_rider_email: rider_email,
+      status: { $in: ["in_transit"] }, // Only in_transit parcels
+    };
+
+    const pendingParcels = await Parcelcollection.find(query).toArray();
+    res.send(pendingParcels);
+  } catch (error) {
+    console.error("Error fetching pending deliveries:", error);
+    res.status(500).send({ message: "Failed to fetch pending deliveries" });
+  }
+});
+
+
+ //   UPDATE PARCEL STATUS (Delivered / Other)
+
+app.patch("/parcels/update-status/:id", async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body; // "in_transit" or "Delivered"
+
+    if (!status) {
+      return res.status(400).send({ success: false, message: "Status is required" });
+    }
+
+    const validStatuses = ["rider_assigned", "in_transit", "Delivered"];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).send({ success: false, message: "Invalid status" });
+    }
+
+    const result = await Parcelcollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { status, updatedAt: new Date() } }
+    );
+
+    if (result.modifiedCount > 0) {
+      res.send({ success: true, message: `Parcel marked as ${status}` });
+    } else {
+      res.status(404).send({ success: false, message: "Parcel not found" });
+    }
+  } catch (error) {
+    console.error("Error updating parcel status:", error);
+    res.status(500).send({ success: false, message: "Failed to update parcel status" });
+  }
+});
+
+
+
+
+
 
     //  Confirm MongoDB connection
     await client.db("admin").command({ ping: 1 });
