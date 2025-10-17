@@ -22,9 +22,12 @@ admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
 
-// MongoDB connection
-const uri =
-  "mongodb+srv://Parcel:Parcel123@co.sb0kq7l.mongodb.net/?retryWrites=true&w=majority&appName=Co";
+// MongoDB connection (use environment variable for credentials)
+const uri = process.env.MONGODB_URI;
+if (!uri) {
+  console.error('Missing MONGODB_URI environment variable. Set it in .env');
+  process.exit(1);
+}
 
 const client = new MongoClient(uri, {
   serverApi: {
