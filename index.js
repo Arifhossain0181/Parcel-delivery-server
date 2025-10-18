@@ -442,50 +442,99 @@ async function run() {
       }
     });
 
-    // Add a new tracking update
-    app.post("/tracking", async (req, res) => {
-      try {
-        const { parcelId, trackingId, status, location, notes, lat, lng } =
-          req.body;
+// 1️ Add a new tracking update
+app.post("/api/tracking", async (req, res) => {
+  try {
+    const { trackingId, status, location, notes, lat, lng } = req.body;
 
-        const newUpdate = {
-          parcelId,
-          trackingId,
-          status,
-          location,
-          notes,
-          lat,
-          lng,
-          createdAt: new Date(),
-        };
+    if (!trackingId || !status) {
+      return res.status(400).json({ success: false, message: "trackingId and status are required" });
+    }
 
-        const result = await TrackingCollection.insertOne(newUpdate);
-        res.send({ success: true, insertedId: result.insertedId });
-      } catch (error) {
-        console.error("Tracking insert error:", error);
-        res.status(500).send({ success: false, message: error.message });
-      }
+    const newUpdate = {
+      trackingId,
+      status,
+      location: location || "Unknown",
+      notes: notes || "Parcel created",
+      lat: lat || null,
+      lng: lng || null,
+      createdAt: new Date(),
+    };
+
+    const result = await TrackingCollection.insertOne(newUpdate);
+
+    // Auto-update main parcel status
+    await Parcelcollection.updateOne(
+      { trackingId },
+      { $set: { deliveryStatus: status, updatedAt: new Date() } }
+    );
+
+    res.status(201).json({
+      success: true,
+      message: "Tracking update added successfully",
+      insertedId: result.insertedId,
     });
+  } catch (error) {
+    console.error("Tracking insert error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
 
-    // Get tracking updates by trackingId or parcelId
-    app.get("/tracking", async (req, res) => {
-      try {
-        const { trackingId, parcelId } = req.query;
+// 2️ Get all tracking updates for a parcel
+app.get("/api/tracking/:trackingId", async (req, res) => {
+  try {
+    const { trackingId } = req.params;
 
-        let query = {};
-        if (trackingId) query.trackingId = trackingId;
-        if (parcelId) query.parcelId = parcelId;
+    const updates = await TrackingCollection.find({ trackingId })
+      .sort({ createdAt: -1 })
+      .toArray();
 
-        const updates = await TrackingCollection.find(query)
-          .sort({ createdAt: -1 })
-          .toArray();
+    const parcel = await Parcelcollection.findOne({ trackingId });
 
-        res.send(updates);
-      } catch (error) {
-        console.error("Tracking fetch error:", error);
-        res.status(500).send({ success: false, message: error.message });
-      }
+    let rider = null;
+    if (parcel?.assigned_rider_email) {
+      rider = await riderescollection.findOne(
+        { email: parcel.assigned_rider_email },
+        { projection: { name: 1, email: 1, contact: 1, license: 1, status: 1, workStatus: 1 } }
+      );
+    }
+
+    res.status(200).json({
+      success: true,
+      trackingId,
+      parcelStatus: parcel?.deliveryStatus || "unknown",
+      parcel,
+      rider,
+      updates,
     });
+  } catch (error) {
+    console.error("Tracking fetch error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// 3️ Get latest/current tracking
+app.get("/api/tracking/:trackingId/current", async (req, res) => {
+  try {
+    const { trackingId } = req.params;
+
+    const latest = await TrackingCollection.find({ trackingId })
+      .sort({ createdAt: -1 })
+      .limit(1)
+      .toArray();
+
+    if (!latest.length) {
+      // Return 200 with null payload so frontend can handle 'no updates' without a 404
+      return res.status(200).json({ success: true, current: null, message: "No tracking updates found" });
+    }
+
+    res.json({ success: true, current: latest[0] });
+  } catch (error) {
+    console.error("Current tracking fetch error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 
     // Add new rider
     app.post("/rideres", async (req, res) => {
@@ -881,6 +930,74 @@ app.get("/rider/earnings", async (req, res) => {
     res.status(500).send({ message: "Failed to fetch rider earnings" });
   }
 });
+
+
+// Admin stats
+app.get("/api/admin/stats", async (req, res) => {
+  const totalParcels = await Parcelcollection.countDocuments();
+  const totalUsers = await usersCollection.countDocuments();
+  const activeRiders = await riderescollection.countDocuments({ status: "active" });
+  const payments = await Paymenthistorycollection.aggregate([
+    { $group: { _id: null, total: { $sum: "$amount" } } },
+  ]).toArray();
+
+  res.send({
+    totalParcels,
+    totalUsers,
+    activeRiders,
+    totalPayments: payments[0]?.total || 0,
+  });
+});
+
+// Admin activities
+app.get("/api/admin/activities", async (req, res) => {
+  const logs = await db.collection("activityLogs")
+    .find({})
+    .sort({ createdAt: -1 })
+    .limit(10)
+    .toArray();
+  res.send(logs);
+});
+
+// User Dashboard API
+app.get("/user/dashboard", async (req, res) => {
+  try {
+    const { email } = req.query;
+    if (!email) {
+      return res.status(400).send({ success: false, message: "User email is required" });
+    }
+
+    // Fetch all parcels created by this user
+    const parcels = await Parcelcollection.find({ createdBy: email }).sort({ createdAt: -1 }).toArray();
+
+    const totalParcels = parcels.length;
+    const delivered = parcels.filter((p) => p.deliveryStatus === "Delivered").length;
+    const inTransit = parcels.filter((p) => p.deliveryStatus === "In Transit" || p.deliveryStatus === "Picked Up").length;
+    const cancelled = parcels.filter((p) => p.deliveryStatus === "Cancelled").length;
+
+    const recentHistory = parcels.slice(0, 10).map((p) => ({
+      id: p.trackingId,
+      status: p.deliveryStatus,
+      destination: p.receiver_address || "Unknown",
+      date: new Date(p.createdAt).toLocaleDateString(),
+    }));
+
+    res.status(200).send({
+      success: true,
+      name: email.split("@")[0],
+      totalParcels,
+      delivered,
+      inTransit,
+      cancelled,
+      recentHistory,
+    });
+  } catch (error) {
+    console.error("User dashboard error:", error);
+    res.status(500).send({ success: false, message: error.message });
+  }
+});
+
+
 
 
 
