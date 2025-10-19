@@ -2,5 +2,9 @@ node_modules
 .env
 config/serviceAccountKey.json
 
+# local overrides
+.env.local
+config/config/serviceAccountKey.json
+
 
 config/config/serviceAccountKey.json
